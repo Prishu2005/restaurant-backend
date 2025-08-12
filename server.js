@@ -1,3 +1,4 @@
+//this is server.js file
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
