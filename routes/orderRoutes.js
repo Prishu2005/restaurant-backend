@@ -11,19 +11,31 @@ router.post("/", async (req, res) => {
       restaurantId,
       items,
       customerName,
-      tableNumber
+      tableNumber,
     });
     await newOrder.save();
+
+    req.io.emit('new_order', newOrder);
+
     res.status(201).json(newOrder);
   } catch (error) {
+    console.error("!!! ERROR in order creation or socket emit:", error);
     res.status(500).json({ message: "Error creating order", error });
   }
 });
 
-// Get all orders for a restaurant
+// Get all orders for a restaurant (with filtering for active orders)
 router.get("/:restaurantId", async (req, res) => {
   try {
-    const orders = await Order.find({ restaurantId: req.params.restaurantId }).sort({ createdAt: -1 });
+    let query = { restaurantId: req.params.restaurantId };
+
+    // This allows the frontend to ask for only active orders
+    // by using the URL: /api/orders/someId?view=active
+    if (req.query.view === 'active') {
+      query.status = { $ne: 'served' }; // $ne means "not equal to"
+    }
+
+    const orders = await Order.find(query).sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: "Error fetching orders", error });
@@ -39,6 +51,11 @@ router.patch("/:id", async (req, res) => {
       { status },
       { new: true }
     );
+
+    // After updating, emit an 'order_status_updated' event to all clients.
+    // This tells the reception dashboard to update the order's status or remove it.
+    req.io.emit('order_status_updated', updatedOrder);
+
     res.json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: "Error updating order", error });
