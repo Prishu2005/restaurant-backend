@@ -1,4 +1,3 @@
-//this is server.js file
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -16,6 +15,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// --- Socket.IO Integration (Moved Higher) ---
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "https://restaurantqrcode.netlify.app", // Your Netlify frontend URL
+    methods: ["GET", "POST"]
+  }
+});
+
+// --- THIS IS THE FIX ---
+// The middleware to attach `io` MUST be defined BEFORE the API routes that use it.
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+// --- END OF FIX ---
+
 mongoose
   .connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -29,21 +45,6 @@ app.use("/api/restaurants", restaurantRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 
-// --- Socket.IO Integration ---
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: {
-    origin: "https://restaurantqrcode.netlify.app", // Your Netlify frontend URL
-    methods: ["GET", "POST"]
-  }
-});
-
-// Middleware to make `io` accessible in your routes
-app.use((req, res, next) => {
-  req.io = io;
-  next();
-});
 
 io.on('connection', (socket) => {
   console.log('✅ A user connected via Socket.IO:', socket.id);
