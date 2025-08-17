@@ -1,4 +1,3 @@
-//orederRoutes.js
 const express = require("express");
 const router = express.Router();
 const Order = require("../models/order");
@@ -15,6 +14,7 @@ router.post("/", async (req, res) => {
     });
     await newOrder.save();
 
+    // This sends the new order to the reception dashboard
     req.io.emit('new_order', newOrder);
 
     res.status(201).json(newOrder);
@@ -29,8 +29,6 @@ router.get("/:restaurantId", async (req, res) => {
   try {
     let query = { restaurantId: req.params.restaurantId };
 
-    // This allows the frontend to ask for only active orders
-    // by using the URL: /api/orders/someId?view=active
     if (req.query.view === 'active') {
       query.status = { $ne: 'served' }; // $ne means "not equal to"
     }
@@ -52,9 +50,19 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
-    // After updating, emit an 'order_status_updated' event to all clients.
-    // This tells the reception dashboard to update the order's status or remove it.
+    if (!updatedOrder) {
+        return res.status(404).json({ message: "Order not found" });
+    }
+
+    // This sends the update to ALL receptionists
     req.io.emit('order_status_updated', updatedOrder);
+
+    // NEW: This sends the update ONLY to the specific customer's table room
+    if (updatedOrder.tableNumber) {
+      const roomName = `table_${updatedOrder.tableNumber}`;
+      req.io.to(roomName).emit('order_status_updated', updatedOrder);
+      console.log(`Emitted status update to room ${roomName}`);
+    }
 
     res.json(updatedOrder);
   } catch (error) {

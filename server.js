@@ -15,7 +15,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- Socket.IO Integration (Moved Higher) ---
+// --- Socket.IO Integration ---
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -24,14 +24,13 @@ const io = new Server(server, {
   }
 });
 
-// --- THIS IS THE FIX ---
-// The middleware to attach `io` MUST be defined BEFORE the API routes that use it.
+// Middleware to attach `io` to every request
 app.use((req, res, next) => {
   req.io = io;
   next();
 });
-// --- END OF FIX ---
 
+// --- Database Connection ---
 mongoose
   .connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -45,9 +44,19 @@ app.use("/api/restaurants", restaurantRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 
-
+// --- Main Socket.IO Connection Handler ---
 io.on('connection', (socket) => {
   console.log('✅ A user connected via Socket.IO:', socket.id);
+
+  // NEW: Listen for a customer joining a table-specific room
+  socket.on('join_table_room', (tableNumber) => {
+    if (tableNumber) {
+      const roomName = `table_${tableNumber}`;
+      socket.join(roomName);
+      console.log(`Socket ${socket.id} joined room ${roomName}`);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('❌ User disconnected:', socket.id);
   });
