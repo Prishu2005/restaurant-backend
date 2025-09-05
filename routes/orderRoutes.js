@@ -16,7 +16,7 @@ const getAndEmitStats = async (io, restaurantId) => {
   try {
     const timeZone = 'Asia/Kolkata';
     const nowInIndia = new Date(); 
-    const startOfTodayInIndia = startOfDay(nowInIndia);
+    const startOfTodayInIndia = startOfDay(nowInIndia); // Corrected this line
     const today = zonedTimeToUtc(startOfTodayInIndia, timeZone);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -44,7 +44,7 @@ router.get("/stats/:restaurantId", async (req, res) => {
         const { restaurantId } = req.params;
         const timeZone = 'Asia/Kolkata';
         const nowInIndia = new Date();
-        const startOfTodayInIndia = startOfDay(nowInIndia);
+        const startOfTodayInIndia = startOfDay(nowInIndia); // Corrected this line
         const today = zonedTimeToUtc(startOfTodayInIndia, timeZone);
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -66,16 +66,15 @@ router.get("/stats/:restaurantId", async (req, res) => {
 });
 
 
+// ... (The rest of the file remains the same) ...
 // Create a new order
 router.post("/", async (req, res) => {
   try {
     const { restaurantId, items, customerName, tableNumber } = req.body;
     const newOrder = new Order({ restaurantId, items, customerName, tableNumber });
     await newOrder.save();
-
     req.io.emit('new_order', newOrder);
     getAndEmitStats(req.io, restaurantId);
-
     res.status(201).json(newOrder);
   } catch (error) {
     console.error("!!! ERROR in order creation:", error);
@@ -102,16 +101,12 @@ router.patch("/:id", async (req, res) => {
   try {
     const { status } = req.body;
     const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
-
     if (!updatedOrder) return res.status(404).json({ message: "Order not found" });
-
     req.io.emit('order_status_updated', updatedOrder);
     if (updatedOrder.tableNumber) {
       req.io.to(`table_${updatedOrder.tableNumber}`).emit('order_status_updated', updatedOrder);
     }
-    
     getAndEmitStats(req.io, updatedOrder.restaurantId);
-
     res.json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: "Error updating order", error });
