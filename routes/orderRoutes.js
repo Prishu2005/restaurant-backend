@@ -1,38 +1,95 @@
+// Filename: routes/orderRoutes.js
+
 const express = require("express");
 const router = express.Router();
 const Order = require("../models/order");
+const mongoose = require("mongoose");
+
+// NEW: Import the timezone library
+const { zonedTimeToUtc, startOfDay } = require('date-fns-tz');
+
+// --- HELPER FUNCTION (Now Timezone-Aware) ---
+const getAndEmitStats = async (io, restaurantId) => {
+  try {
+    const timeZone = 'Asia/Kolkata';
+    
+    // NEW: Calculate the start of today in the Indian timezone
+    const nowInIndia = new Date(); 
+    const startOfTodayInIndia = startOfDay(nowInIndia, { timeZone });
+    
+    // Convert to UTC because that's how MongoDB stores dates
+    const today = zonedTimeToUtc(startOfTodayInIndia, timeZone);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const stats = await Order.aggregate([
+      { $match: { restaurantId: new mongoose.Types.ObjectId(restaurantId), createdAt: { $gte: today, $lt: tomorrow } } },
+      { $addFields: { orderTotal: { $sum: { $map: { input: "$items", as: "item", in: { $multiply: ["$$item.price", "$$item.quantity"] } } } } } },
+      { $group: { _id: null, totalSales: { $sum: "$orderTotal" }, totalOrders: { $sum: 1 } } },
+      { $project: { _id: 0, totalSales: 1, totalOrders: 1, averageOrderValue: { $cond: { if: { $gt: ["$totalOrders", 0] }, then: { $divide: ["$totalSales", "$totalOrders"] }, else: 0 } } } }
+    ]);
+    
+    const result = stats[0] || { totalSales: 0, totalOrders: 0, averageOrderValue: 0 };
+    io.emit('stats_updated', result);
+  } catch (error) {
+    console.error("Error calculating or emitting stats:", error);
+  }
+};
+
+
+// --- API ROUTES ---
+
+// Get sales statistics for today (Now Timezone-Aware)
+router.get("/stats/:restaurantId", async (req, res) => {
+    try {
+        const { restaurantId } = req.params;
+        const timeZone = 'Asia/Kolkata';
+        const nowInIndia = new Date();
+        const startOfTodayInIndia = startOfDay(nowInIndia, { timeZone });
+        const today = zonedTimeToUtc(startOfTodayInIndia, timeZone);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const stats = await Order.aggregate([
+            { $match: { restaurantId: new mongoose.Types.ObjectId(restaurantId), createdAt: { $gte: today, $lt: tomorrow } } },
+            { $addFields: { orderTotal: { $sum: { $map: { input: "$items", as: "item", in: { $multiply: ["$$item.price", "$$item.quantity"] } } } } } },
+            { $group: { _id: null, totalSales: { $sum: "$orderTotal" }, totalOrders: { $sum: 1 } } },
+            { $project: { _id: 0, totalSales: 1, totalOrders: 1, averageOrderValue: { $cond: { if: { $gt: ["$totalOrders", 0] }, then: { $divide: ["$totalSales", "$totalOrders"] }, else: 0 } } } }
+        ]);
+
+        const result = stats[0] || { totalSales: 0, totalOrders: 0, averageOrderValue: 0 };
+        res.json(result);
+
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching stats", error });
+    }
+});
+
 
 // Create a new order
 router.post("/", async (req, res) => {
   try {
     const { restaurantId, items, customerName, tableNumber } = req.body;
-    const newOrder = new Order({
-      restaurantId,
-      items,
-      customerName,
-      tableNumber,
-    });
+    const newOrder = new Order({ restaurantId, items, customerName, tableNumber });
     await newOrder.save();
 
-    // This sends the new order to the reception dashboard
     req.io.emit('new_order', newOrder);
+    getAndEmitStats(req.io, restaurantId);
 
     res.status(201).json(newOrder);
   } catch (error) {
-    console.error("!!! ERROR in order creation or socket emit:", error);
+    console.error("!!! ERROR in order creation:", error);
     res.status(500).json({ message: "Error creating order", error });
   }
 });
 
-// Get all orders for a restaurant (with filtering for active orders)
+// Get all orders for a restaurant
 router.get("/:restaurantId", async (req, res) => {
   try {
     let query = { restaurantId: req.params.restaurantId };
-
     if (req.query.view === 'active') {
-      query.status = { $ne: 'served' }; // $ne means "not equal to"
+      query.status = { $ne: 'served' };
     }
-
     const orders = await Order.find(query).sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {
@@ -44,25 +101,16 @@ router.get("/:restaurantId", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const { status } = req.body;
-    const updatedOrder = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
+    const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
 
-    if (!updatedOrder) {
-        return res.status(404).json({ message: "Order not found" });
-    }
+    if (!updatedOrder) return res.status(404).json({ message: "Order not found" });
 
-    // This sends the update to ALL receptionists
     req.io.emit('order_status_updated', updatedOrder);
-
-    // NEW: This sends the update ONLY to the specific customer's table room
     if (updatedOrder.tableNumber) {
-      const roomName = `table_${updatedOrder.tableNumber}`;
-      req.io.to(roomName).emit('order_status_updated', updatedOrder);
-      console.log(`Emitted status update to room ${roomName}`);
+      req.io.to(`table_${updatedOrder.tableNumber}`).emit('order_status_updated', updatedOrder);
     }
+    
+    getAndEmitStats(req.io, updatedOrder.restaurantId);
 
     res.json(updatedOrder);
   } catch (error) {
