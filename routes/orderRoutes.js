@@ -16,7 +16,7 @@ const getAndEmitStats = async (io, restaurantId) => {
   try {
     const timeZone = 'Asia/Kolkata';
     const nowInIndia = new Date(); 
-    const startOfTodayInIndia = startOfDay(nowInIndia, { timeZone });
+    const startOfTodayInIndia = startOfDay(nowInIndia);
     const today = zonedTimeToUtc(startOfTodayInIndia, timeZone);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -44,7 +44,7 @@ router.get("/stats/:restaurantId", async (req, res) => {
         const { restaurantId } = req.params;
         const timeZone = 'Asia/Kolkata';
         const nowInIndia = new Date();
-        const startOfTodayInIndia = startOfDay(nowInIndia, { timeZone });
+        const startOfTodayInIndia = startOfDay(nowInIndia);
         const today = zonedTimeToUtc(startOfTodayInIndia, timeZone);
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
