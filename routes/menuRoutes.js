@@ -1,4 +1,3 @@
-//menuRoutes.js
 const express = require("express");
 const router = express.Router();
 const MenuItem = require("../models/MenuItem");
@@ -20,11 +19,27 @@ router.get("/", async (req, res) => {
 
 // Add menu item
 router.post("/", async (req, res) => {
-  const { name, description, price, category, restaurantId } = req.body;
+  const { name, description, price, restaurantId } = req.body;
+  let { category } = req.body; // Use 'let' to allow modification
 
   if (!restaurantId) {
     return res.status(400).json({ error: "restaurantId is required" });
   }
+
+  // --- UPGRADE: Standardize the category name ---
+  // If a category is provided, format it to "Title Case".
+  if (category && typeof category === 'string' && category.trim() !== '') {
+    category = category
+      .trim() // Remove leading/trailing spaces
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  } else {
+    // If no category is given, assign a default.
+    category = 'Uncategorized';
+  }
+  // --- END OF UPGRADE ---
 
   try {
     const newItem = new MenuItem({ name, description, price, category, restaurantId });
@@ -46,4 +61,3 @@ router.delete("/:id", async (req, res) => {
 });
 
 module.exports = router;
-
