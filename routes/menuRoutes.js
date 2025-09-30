@@ -2,7 +2,6 @@ const express = require("express");
 const router = express.Router();
 const MenuItem = require("../models/MenuItem");
 
-// --- THIS IS THE UPGRADE ---
 // This route now handles requests from BOTH customers and admins.
 router.get("/", async (req, res) => {
   const { restaurantId, showAll } = req.query;
@@ -13,10 +12,12 @@ router.get("/", async (req, res) => {
   try {
     let query = { restaurantId };
 
-    // If the request is NOT from an admin, only show available items.
-    // The admin will send `showAll=true`.
+    // If the request is from a customer (showAll is not 'true'), 
+    // we now find all items where isAvailable is NOT explicitly false.
+    // This will include old items that don't have the isAvailable field yet.
     if (showAll !== 'true') {
-      query.isAvailable = true;
+      // --- THIS IS THE FIX ---
+      query.isAvailable = { $ne: false }; // $ne means "not equal to"
     }
 
     const menuItems = await MenuItem.find(query);
