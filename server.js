@@ -48,7 +48,7 @@ app.use("/api/orders", orderRoutes);
 io.on('connection', (socket) => {
   console.log('✅ A user connected via Socket.IO:', socket.id);
 
-  // NEW: Listen for a customer joining a table-specific room
+  // For customer status updates
   socket.on('join_table_room', (tableNumber) => {
     if (tableNumber) {
       const roomName = `table_${tableNumber}`;
@@ -56,6 +56,15 @@ io.on('connection', (socket) => {
       console.log(`Socket ${socket.id} joined room ${roomName}`);
     }
   });
+
+  // --- THIS IS THE UPGRADE ---
+  // Listen for a "Call Waiter" event from a customer's phone
+  socket.on('call_waiter', (data) => {
+    // Broadcast the call to all connected receptionists
+    io.emit('waiter_called', data);
+    console.log(`Table ${data.tableNumber} is calling a waiter.`);
+  });
+  // --- END OF UPGRADE ---
 
   socket.on('disconnect', () => {
     console.log('❌ User disconnected:', socket.id);

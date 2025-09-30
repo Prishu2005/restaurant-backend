@@ -1,4 +1,3 @@
-// models/MenuItem.js
 const mongoose = require("mongoose");
 
 const menuItemSchema = new mongoose.Schema({
@@ -10,6 +9,13 @@ const menuItemSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Restaurant",
     required: true,
+  },
+  // --- NEW FEATURE ---
+  // Add a field to track if the item is available for ordering.
+  // By default, all new items are available.
+  isAvailable: {
+    type: Boolean,
+    default: true,
   },
 });
 
