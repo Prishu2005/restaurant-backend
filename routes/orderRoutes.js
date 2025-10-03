@@ -87,7 +87,7 @@ router.get("/:restaurantId", async (req, res) => {
 });
 
 // Update order status
-router.patch("/:id", async (req, res) => {
+router.patch("/id", async (req, res) => {
   try {
     const { status } = req.body;
     const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
