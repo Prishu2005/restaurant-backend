@@ -3,12 +3,11 @@ const router = express.Router();
 const Order = require("../models/order");
 const mongoose = require("mongoose");
 
-// --- HELPER FUNCTION (Simplified) ---
+// Helper function (simplified, no external libraries)
 const getAndEmitStats = async (io, restaurantId) => {
   try {
     const today = new Date();
-    // Use UTC to be independent of server location. This is simpler and more robust.
-    today.setUTCHours(0, 0, 0, 0); 
+    today.setUTCHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -18,7 +17,6 @@ const getAndEmitStats = async (io, restaurantId) => {
       { $group: { _id: null, totalSales: { $sum: "$orderTotal" }, totalOrders: { $sum: 1 } } },
       { $project: { _id: 0, totalSales: 1, totalOrders: 1, averageOrderValue: { $cond: { if: { $gt: ["$totalOrders", 0] }, then: { $divide: ["$totalSales", "$totalOrders"] }, else: 0 } } } }
     ]);
-    
     const result = stats[0] || { totalSales: 0, totalOrders: 0, averageOrderValue: 0 };
     io.emit('stats_updated', result);
   } catch (error) {
@@ -26,41 +24,18 @@ const getAndEmitStats = async (io, restaurantId) => {
   }
 };
 
-
-// --- API ROUTES ---
-
-// Get sales statistics for today (Simplified)
-router.get("/stats/:restaurantId", async (req, res) => {
-    try {
-        const { restaurantId } = req.params;
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0); // Start of today in UTC
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-
-        const stats = await Order.aggregate([
-            { $match: { restaurantId: new mongoose.Types.ObjectId(restaurantId), createdAt: { $gte: today, $lt: tomorrow } } },
-            { $addFields: { orderTotal: { $sum: { $map: { input: "$items", as: "item", in: { $multiply: ["$$item.price", "$$item.quantity"] } } } } } },
-            { $group: { _id: null, totalSales: { $sum: "$orderTotal" }, totalOrders: { $sum: 1 } } },
-            { $project: { _id: 0, totalSales: 1, totalOrders: 1, averageOrderValue: { $cond: { if: { $gt: ["$totalOrders", 0] }, then: { $divide: ["$totalSales", "$totalOrders"] }, else: 0 } } } }
-        ]);
-
-        const result = stats[0] || { totalSales: 0, totalOrders: 0, averageOrderValue: 0 };
-        res.json(result);
-
-    } catch (error) {
-        console.error("!!! CRASH in GET /stats/:restaurantId:", error);
-        res.status(500).json({ message: "Error fetching stats", error });
-    }
-});
-
-
 // Create a new order
 router.post("/", async (req, res) => {
   try {
     const { restaurantId, items, customerName, tableNumber } = req.body;
     const newOrder = new Order({ restaurantId, items, customerName, tableNumber, notes: req.body.notes });
     await newOrder.save();
+
+    // --- NEW DIAGNOSTIC LOG ---
+    // This tells us how many clients the server thinks are connected.
+    const connectedClientCount = req.io.engine.clientsCount;
+    console.log(`--- DIAGNOSTIC: Attempting to emit. Server sees ${connectedClientCount} connected clients. ---`);
+    // --- END OF DIAGNOSTIC LOG ---
 
     req.io.emit('new_order', newOrder);
     getAndEmitStats(req.io, restaurantId);
@@ -72,7 +47,29 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Get all orders for a restaurant
+
+// ... (The rest of the file remains the same) ...
+
+router.get("/stats/:restaurantId", async (req, res) => {
+    try {
+        const { restaurantId } = req.params;
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const stats = await Order.aggregate([
+            { $match: { restaurantId: new mongoose.Types.ObjectId(restaurantId), createdAt: { $gte: today, $lt: tomorrow } } },
+            { $addFields: { orderTotal: { $sum: { $map: { input: "$items", as: "item", in: { $multiply: ["$$item.price", "$$item.quantity"] } } } } } },
+            { $group: { _id: null, totalSales: { $sum: "$orderTotal" }, totalOrders: { $sum: 1 } } },
+            { $project: { _id: 0, totalSales: 1, totalOrders: 1, averageOrderValue: { $cond: { if: { $gt: ["$totalOrders", 0] }, then: { $divide: ["$totalSales", "$totalOrders"] }, else: 0 } } } }
+        ]);
+        const result = stats[0] || { totalSales: 0, totalOrders: 0, averageOrderValue: 0 };
+        res.json(result);
+    } catch (error) {
+        console.error("!!! CRASH in GET /stats/:restaurantId:", error);
+        res.status(500).json({ message: "Error fetching stats", error });
+    }
+});
 router.get("/:restaurantId", async (req, res) => {
   try {
     let query = { restaurantId: req.params.restaurantId };
@@ -85,22 +82,16 @@ router.get("/:restaurantId", async (req, res) => {
     res.status(500).json({ message: "Error fetching orders", error });
   }
 });
-
-// Update order status
-router.patch("/id", async (req, res) => {
+router.patch("/:id", async (req, res) => {
   try {
     const { status } = req.body;
     const updatedOrder = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
-
     if (!updatedOrder) return res.status(404).json({ message: "Order not found" });
-
     req.io.emit('order_status_updated', updatedOrder);
     if (updatedOrder.tableNumber) {
       req.io.to(`table_${updatedOrder.tableNumber}`).emit('order_status_updated', updatedOrder);
     }
-    
     getAndEmitStats(req.io, updatedOrder.restaurantId);
-
     res.json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: "Error updating order", error });
