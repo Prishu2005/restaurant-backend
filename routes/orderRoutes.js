@@ -59,7 +59,7 @@ router.get("/stats/:restaurantId", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const { restaurantId, items, customerName, tableNumber } = req.body;
-    const newOrder = new Order({ restaurantId, items, customerName, tableNumber });
+    const newOrder = new Order({ restaurantId, items, customerName, tableNumber, notes: req.body.notes });
     await newOrder.save();
 
     req.io.emit('new_order', newOrder);
