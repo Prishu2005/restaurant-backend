@@ -4,6 +4,7 @@ const cors = require("cors");
 require("dotenv").config();
 const http = require('http');
 const { Server } = require("socket.io");
+const morgan = require('morgan'); // --- NEW: Import the logger ---
 
 // Import all your routes
 const restaurantRoutes = require("./routes/restaurantRoutes");
@@ -12,6 +13,10 @@ const orderRoutes = require("./routes/orderRoutes");
 
 const app = express();
 
+// --- NEW: Use the logger middleware ---
+// This will automatically log every incoming request to the console.
+app.use(morgan('dev'));
+
 app.use(cors());
 app.use(express.json());
 
@@ -19,7 +24,7 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://restaurantqrcode.netlify.app", // Your Netlify frontend URL
+    origin: "https://restaurantqrcode.netlify.app",
     methods: ["GET", "POST"]
   }
 });
@@ -48,7 +53,6 @@ app.use("/api/orders", orderRoutes);
 io.on('connection', (socket) => {
   console.log('✅ A user connected via Socket.IO:', socket.id);
 
-  // For customer status updates
   socket.on('join_table_room', (tableNumber) => {
     if (tableNumber) {
       const roomName = `table_${tableNumber}`;
@@ -56,15 +60,6 @@ io.on('connection', (socket) => {
       console.log(`Socket ${socket.id} joined room ${roomName}`);
     }
   });
-
-  // --- THIS IS THE UPGRADE ---
-  // Listen for a "Call Waiter" event from a customer's phone
-  socket.on('call_waiter', (data) => {
-    // Broadcast the call to all connected receptionists
-    io.emit('waiter_called', data);
-    console.log(`Table ${data.tableNumber} is calling a waiter.`);
-  });
-  // --- END OF UPGRADE ---
 
   socket.on('disconnect', () => {
     console.log('❌ User disconnected:', socket.id);
